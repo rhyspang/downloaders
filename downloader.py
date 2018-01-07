@@ -18,17 +18,23 @@ import grequests
 import pandas as pd
 import requests
 
-# SCORE_ZERO_WORDS = ['uncle', 'people', 'little', 'puppy', 'cousin', 'aunt', 'parents', 'but']
-
 
 args = argparse.ArgumentParser()
-args.add_argument('-s', '--start', type=int, default=1, help="start row number")
-args.add_argument('-d', '--directory', default='downloads', help="download directory")
-args.add_argument('-n', '--nThread', type=int, default=50, help="group requests size")
-args.add_argument('-f', '--file', default='', help='data file')
-args.add_argument('-e', '--sheet', type=int, default=0, help="sheet to read")
-args.add_argument('-l', '--list', nargs='*', type=str, help="specify words to download")
+args.add_argument(
+    '-s', '--start', type=int, default=1, help="start row number")
+args.add_argument(
+    '-d', '--directory', default='downloads', help="download directory")
+args.add_argument(
+    '-n', '--nThread', type=int, default=50, help="group requests size")
+args.add_argument(
+    '-f', '--file', default='', help='data file')
+args.add_argument(
+    '-e', '--sheet', type=int, default=0, help="sheet to read")
+args.add_argument(
+    '-l', '--list', nargs='*', type=str, help="specify words to download")
 FLAGS = args.parse_args()
+
+SENTENCE = '__SENTENCES'
 
 
 def download_amr(word_name, url):
@@ -53,27 +59,36 @@ def group_download_amr(words_name, urls):
     response_set = grequests.map(rs)
     no_response_cnt, download_cnt = 0, 0
     for word_name, response in zip(words_name, response_set):
+        try:
 
-        if not response:
-            no_response_cnt += 1
+            if not response:
+                no_response_cnt += 1
+                continue
+            if response.status_code != 200:
+                # print('url: %s, bad response code: %s. skipped!'
+                # % (response.url, response.status_code))
+                continue
+            if not response.content:
+                # print('url: %s, no content, skipped!' % response.url)
+                continue
+
+            save_dir = os.path.join(FLAGS.directory, word_name)
+            filename = os.path.join(save_dir, response.url.split('/')[-1])
+            label_name = "%s.txt" % (os.path.splitext(filename)[0])
+
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+
+            with open(filename, 'w') as f:
+                f.write(response.content)
+                download_cnt += 1
+            if word_name == SENTENCE:
+                with open(label_name, 'w') as f_lable:
+                    f_lable.write(word_name.encode('utf-8'))
+        except Exception as e:
+            print(e)
             continue
-        if response.status_code != 200:
-            # print('url: %s, bad response code: %s. skipped!'
-            # % (response.url, response.status_code))
-            continue
-        if not response.content:
-            # print('url: %s, no content, skipped!' % response.url)
-            continue
 
-        save_dir = os.path.join(FLAGS.directory, word_name)
-        filename = os.path.join(save_dir, response.url.split('/')[-1])
-
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        with open(filename, 'w') as f:
-            f.write(response.content)
-            download_cnt += 1
     return no_response_cnt, download_cnt
 
 
@@ -96,17 +111,20 @@ def main():
 
             json_str = data
             data_dict = json.loads(json_str)
-            if not data_dict.get('question') or len(data_dict.get('question').split()) != 1:
+            if not data_dict.get('question'):
                 continue
 
             url = data_dict.get('mp3Url')
             filename = url.split('/')[-1]
-            word_name = data_dict.get('question')
+            word_name = data_dict.get('question') \
+                if len(data_dict.get('question').split()) == 1\
+                else SENTENCE
 
             if FLAGS.list and word_name not in FLAGS.list:
                 continue
 
-            if os.path.exists(os.path.join(FLAGS.directory, word_name, filename)):
+            if os.path.exists(os.path.join(
+                    FLAGS.directory, SENTENCE, filename)):
                 continue
 
             if len(words_set) == FLAGS.nThread or idx == all_len:
